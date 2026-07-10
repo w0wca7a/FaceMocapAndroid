@@ -1,0 +1,170 @@
+package com.example.facemocap
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.net.wifi.WifiManager
+import android.os.Bundle
+import android.text.format.Formatter
+import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
+import java.util.concurrent.Executors
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var previewView: PreviewView
+    private lateinit var overlayView: OverlayView
+    private lateinit var statusText: TextView
+    private lateinit var connectionIndicator: android.view.View
+
+    private lateinit var faceLandmarkerHelper: FaceLandmarkerHelper
+    private lateinit var tcpStreamer: TcpStreamer
+
+    private val cameraExecutor = Executors.newSingleThreadExecutor()
+
+    @SuppressLint("SetTextI18n")
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) startCamera() else statusText.text = "Camera permission denied"
+        }
+
+    private fun setConnectionIndicator(connected: Boolean) {
+        val color = if (connected) android.graphics.Color.parseColor("#4CAF50") // зелёный
+        else android.graphics.Color.parseColor("#F44336")           // красный
+        connectionIndicator.background.setTint(color)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        previewView = findViewById(R.id.previewView)
+        overlayView = findViewById(R.id.overlayView)
+        statusText = findViewById(R.id.statusText)
+        connectionIndicator = findViewById(R.id.connectionIndicator)
+
+        setConnectionIndicator(connected = false)
+
+
+        tcpStreamer = TcpStreamer(PORT)
+        tcpStreamer.onConnectionStateChanged = { connected -> setConnectionIndicator(connected) }
+        tcpStreamer.start()
+
+        faceLandmarkerHelper = FaceLandmarkerHelper(this) { result, imgW, imgH ->
+            //runOnUiThread { onFaceResult(result, imgW, imgH) }
+	    onFaceResult(result, imgW, imgH)
+        }
+
+        updateStatusText()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            startCamera()
+        } else {
+            requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    private fun updateStatusText() {
+        val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+        @Suppress("DEPRECATION")
+        val ip = Formatter.formatIpAddress(wifiManager.connectionInfo.ipAddress)
+        statusText.text = "TCP ADDRESS: $ip   Port: $PORT"
+    }
+
+    @SuppressLint("SetTextI18n")
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+                .also {
+                    it.setAnalyzer(cameraExecutor) { imageProxy ->
+                        faceLandmarkerHelper.detectAsync(imageProxy)
+                    }
+                }
+
+            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+            } catch (e: Exception) {
+                statusText.text = "Camera bind failed: ${e.message}"
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun onFaceResult(result: FaceLandmarkerResult, imgW: Int, imgH: Int) {
+        if (result.faceLandmarks().isEmpty()) {
+            //overlayView.setResults(emptyList(), imgW, imgH, mirrorHorizontally = true)
+            runOnUiThread {
+                overlayView.setResults(
+                    emptyList(),
+                    imgW,
+                    imgH,
+                    mirrorHorizontally = true
+                )
+            }
+            return
+        }
+
+        val landmarks = result.faceLandmarks()[0]
+
+        // Overlay: MediaPipe's normalized image-space coordinates, used as-is for drawing.
+        val normalizedPoints = landmarks.map { it.x() to it.y() }
+        //overlayView.setResults(normalizedPoints, imgW, imgH, mirrorHorizontally = true)
+        runOnUiThread {
+            overlayView.setResults(
+                normalizedPoints,
+                imgW,
+                imgH,
+                mirrorHorizontally = true
+            )
+        }
+
+        // Network: approximate metric-ish coordinates so the wire format's *scale* is in the
+        // same ballpark as the original app's capture (X/Y roughly +-100, Z roughly -400).
+        // NOTE: this is a heuristic, not true depth - MediaPipe's raw landmarks are normalized
+        // to the image, not physically metric. Tune the two constants below to your setup, or
+        // extend this using outputFacialTransformationMatrixes() + the canonical face model
+        // if you need real per-vertex metric depth.
+        val points = landmarks.map { lm ->
+            val xMm = (lm.x() - 0.5f) * ASSUMED_FACE_WIDTH_MM * (imgW.toFloat() / imgH.toFloat())
+            val yMm = (lm.y() - 0.5f) * ASSUMED_FACE_WIDTH_MM
+            val zMm = -ASSUMED_DISTANCE_MM + lm.z() * ASSUMED_FACE_WIDTH_MM
+            Triple(xMm, yMm, zMm)
+        }
+        tcpStreamer.sendFrame(points)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        tcpStreamer.stop()
+        faceLandmarkerHelper.close()
+        cameraExecutor.shutdown()
+    }
+
+    companion object {
+        private const val PORT = 9996
+        private const val ASSUMED_FACE_WIDTH_MM = 140f
+        private const val ASSUMED_DISTANCE_MM = 400f
+    }
+}

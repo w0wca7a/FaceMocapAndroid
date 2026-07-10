@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <com.example.facemocap.OverlayView
+        android:id="@+id/overlayView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_gravity="top"
+        android:background="#88000000"
+        android:padding="8dp"
+        android:text="Starting..."
+        android:textColor="#FFFFFF"
+        android:textSize="14sp" />
+
+    <View
+        android:id="@+id/connectionIndicator"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/circle_indicator" />
+
+</FrameLayout>
