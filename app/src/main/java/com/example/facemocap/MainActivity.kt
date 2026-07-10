@@ -1,7 +1,6 @@
 package com.example.facemocap
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
@@ -30,17 +29,10 @@ class MainActivity : AppCompatActivity() {
 
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
-    @SuppressLint("SetTextI18n")
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) startCamera() else statusText.text = "Camera permission denied"
         }
-
-    private fun setConnectionIndicator(connected: Boolean) {
-        val color = if (connected) android.graphics.Color.parseColor("#4CAF50") // зелёный
-        else android.graphics.Color.parseColor("#F44336")           // красный
-        connectionIndicator.background.setTint(color)
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,14 +45,14 @@ class MainActivity : AppCompatActivity() {
 
         setConnectionIndicator(connected = false)
 
-
         tcpStreamer = TcpStreamer(PORT)
-        tcpStreamer.onConnectionStateChanged = { connected -> setConnectionIndicator(connected) }
+        tcpStreamer.onConnectionStateChanged = { connected ->
+            runOnUiThread { setConnectionIndicator(connected) }
+        }
         tcpStreamer.start()
 
         faceLandmarkerHelper = FaceLandmarkerHelper(this) { result, imgW, imgH ->
-            //runOnUiThread { onFaceResult(result, imgW, imgH) }
-	    onFaceResult(result, imgW, imgH)
+            onFaceResult(result, imgW, imgH)
         }
 
         updateStatusText()
@@ -74,14 +66,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setConnectionIndicator(connected: Boolean) {
+        val color = if (connected) android.graphics.Color.parseColor("#4CAF50") // зелёный
+        else android.graphics.Color.parseColor("#F44336")           // красный
+        connectionIndicator.background.setTint(color)
+    }
+
     private fun updateStatusText() {
         val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
         @Suppress("DEPRECATION")
         val ip = Formatter.formatIpAddress(wifiManager.connectionInfo.ipAddress)
-        statusText.text = "TCP ADDRESS: $ip   Port: $PORT"
+        statusText.text = "TCP $ip:$PORT"
     }
 
-    @SuppressLint("SetTextI18n")
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
@@ -114,14 +111,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun onFaceResult(result: FaceLandmarkerResult, imgW: Int, imgH: Int) {
         if (result.faceLandmarks().isEmpty()) {
-            //overlayView.setResults(emptyList(), imgW, imgH, mirrorHorizontally = true)
             runOnUiThread {
-                overlayView.setResults(
-                    emptyList(),
-                    imgW,
-                    imgH,
-                    mirrorHorizontally = true
-                )
+                overlayView.setResults(emptyList(), imgW, imgH, mirrorHorizontally = true)
             }
             return
         }
@@ -130,29 +121,18 @@ class MainActivity : AppCompatActivity() {
 
         // Overlay: MediaPipe's normalized image-space coordinates, used as-is for drawing.
         val normalizedPoints = landmarks.map { it.x() to it.y() }
-        //overlayView.setResults(normalizedPoints, imgW, imgH, mirrorHorizontally = true)
         runOnUiThread {
-            overlayView.setResults(
-                normalizedPoints,
-                imgW,
-                imgH,
-                mirrorHorizontally = true
-            )
+            overlayView.setResults(normalizedPoints, imgW, imgH, mirrorHorizontally = true)
         }
 
-        // Network: approximate metric-ish coordinates so the wire format's *scale* is in the
-        // same ballpark as the original app's capture (X/Y roughly +-100, Z roughly -400).
-        // NOTE: this is a heuristic, not true depth - MediaPipe's raw landmarks are normalized
-        // to the image, not physically metric. Tune the two constants below to your setup, or
-        // extend this using outputFacialTransformationMatrixes() + the canonical face model
-        // if you need real per-vertex metric depth.
-        val points = landmarks.map { lm ->
-            val xMm = (lm.x() - 0.5f) * ASSUMED_FACE_WIDTH_MM * (imgW.toFloat() / imgH.toFloat())
-            val yMm = (lm.y() - 0.5f) * ASSUMED_FACE_WIDTH_MM
-            val zMm = -ASSUMED_DISTANCE_MM + lm.z() * ASSUMED_FACE_WIDTH_MM
-            Triple(xMm, yMm, zMm)
+        // Network: real MediaPipe blendshape scores (0..1), no geometric guesswork needed.
+        val blendshapeList = result.faceBlendshapes().orElse(null)?.getOrNull(0)
+        if (blendshapeList != null) {
+            val blendshapes = blendshapeList.map { category ->
+                category.categoryName() to category.score()
+            }
+            tcpStreamer.sendFrame(blendshapes)
         }
-        tcpStreamer.sendFrame(points)
     }
 
     override fun onDestroy() {
@@ -164,7 +144,5 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val PORT = 9996
-        private const val ASSUMED_FACE_WIDTH_MM = 140f
-        private const val ASSUMED_DISTANCE_MM = 400f
     }
 }

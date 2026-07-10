@@ -1,6 +1,5 @@
 package com.example.facemocap
 
-import android.annotation.SuppressLint
 import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
@@ -9,15 +8,13 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 /**
- * Minimal TCP server replicating the wire format reverse-engineered from a real capture
- * of the original Face Mocap app:
+ * Minimal TCP server streaming per-frame face blendshape scores.
  *
- *   ?FFFF X1_Y1_Z1|X2_Y2_Z2|...|Xn_Yn_Zn|
+ *   ?FFFF eyeBlinkLeft_0.812|jawOpen_0.045|mouthSmileLeft_0.230|...|
  *
  * - '?'  frame start marker
  * - FFFF: 4-digit zero-padded rolling frame counter (0000..9999)
- * - points separated by '|', each point's X_Y_Z separated by '_'
- * - one decimal place, matching the sample capture
+ * - entries separated by '|', each as name_score (score 0..1, 3 decimals)
  *
  * Only one client is served at a time (matches the original app's behaviour of a phone
  * acting as a TCP server that a single receiver connects to).
@@ -58,9 +55,13 @@ class TcpStreamer(private val port: Int) {
         onConnectionStateChanged?.invoke(false)
     }
 
-    /** points: (x, y, z) in whatever units you want on the wire (mm-like, to match the original). */
-    @SuppressLint("DefaultLocale")
-    fun sendFrame(points: List<Triple<Float, Float, Float>>) {
+    /**
+     * Sends one frame of blendshape scores.
+     * Wire format: ?FFFF name1_score1|name2_score2|...|
+     * (same '?' + 4-digit frame id framing as before, but each "point" is now a
+     * blendshape name and its 0..1 score instead of an X_Y_Z landmark.)
+     */
+    fun sendFrame(blendshapes: List<Pair<String, Float>>) {
         val out = clientOut.get() ?: return
 
         val sb = StringBuilder()
@@ -68,18 +69,16 @@ class TcpStreamer(private val port: Int) {
         sb.append(String.format("%04d", frameCounter % 10000))
         frameCounter++
 
-        for ((x, y, z) in points) {
-            sb.append(String.format("%.1f", x)).append('_')
-            sb.append(String.format("%.1f", y)).append('_')
-            sb.append(String.format("%.1f", z)).append('|')
+        for ((name, score) in blendshapes) {
+            sb.append(name).append('_')
+            sb.append(String.format(java.util.Locale.US, "%.3f", score)).append('|')
         }
 
         try {
             out.write(sb.toString().toByteArray(Charsets.US_ASCII))
             out.flush()
-        }
-        catch (e: Exception) {
-            e.message;
+        } catch (_: Exception) {
+            // client disconnected mid-write - drop it, wait for a new connection
             clientOut.set(null)
             onConnectionStateChanged?.invoke(false)
         }

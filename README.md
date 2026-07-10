@@ -1,15 +1,15 @@
 # Face Mocap (Android) — replica
 
-Camera preview + face mesh overlay + TCP streaming of landmarks, in the wire format
-reverse-engineered from a real capture of the original Face Mocap app:
+Camera preview + face mesh overlay + TCP streaming of blendshapes, wire format:
 
 ```
-?FFFF X1_Y1_Z1|X2_Y2_Z2|...|Xn_Yn_Zn|
+?FFFFname1_score1|name2_score2|...|
 ```
 
 - `?` — frame start marker
 - `FFFF` — 4-digit zero-padded rolling frame counter
-- points separated by `|`, each point's `X_Y_Z` separated by `_`
+- entries separated by `|`, each as `name_score` (score 0..1, 3 decimals, split on the
+  last `_` since blendshape names never contain one)
 
 ## Before building
 
@@ -29,23 +29,14 @@ reverse-engineered from a real capture of the original Face Mocap app:
 1. Install on a real device (emulator camera won't give useful face tracking).
 2. Grant camera permission when prompted.
 3. The top bar shows the phone's Wi-Fi IP and port (9996 by default) — same info the
-   original app displayed. Point your TCP client at that IP:port (the `FaceMocapReceiver.cs`
-   Stride script from earlier works as-is).
+   original app displayed. Point your TCP client at that IP:port.
 4. Green dots should appear over your face — that's the same landmark set being streamed.
 
 ## Known differences from the original app
 
-- **Landmark source**: uses MediaPipe Face Landmarker (468 points) instead of ARCore
-  Augmented Faces. Same canonical face topology, actively maintained, works on more
-  devices (no ARCore compatibility list).
-- **Z / metric scale on the wire**: the original app's values (`Z` around -380..-460)
-  look like real depth in millimeters from an ARCore-tracked camera pose. MediaPipe's raw
-  landmarks are normalized to the image, not physically metric, so `MainActivity.onFaceResult`
-  uses a rough heuristic (`ASSUMED_FACE_WIDTH_MM` / `ASSUMED_DISTANCE_MM`) to put numbers in a
-  similar range. It is **not** true depth. If you need accurate per-vertex metric coordinates,
-  enable `outputFacialTransformationMatrixes()` (already on) and multiply MediaPipe's
-  canonical face model vertices (a fixed 468-vertex array Google publishes) by that 4x4
-  matrix per frame — happy to add that if you need real depth accuracy.
+- **Blendshape** source: uses MediaPipe Face Landmarker's built-in blendshape model (52
+  ARKit-style scores, setOutputFaceBlendshapes(true)) instead of ARCore Augmented Faces
+  or geometric estimation from landmarks. More accurate than a geometric approximation.
 - **Single client only**: like the original, the phone is a TCP server; only one connected
   client is served at a time.
 - **No head-pose block on the wire**: matches what we actually captured from your app —

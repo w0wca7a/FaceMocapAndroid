@@ -26,6 +26,7 @@ class FaceLandmarkerHelper(
         val baseOptions = BaseOptions.builder()
             .setModelAssetPath("face_landmarker.task")
             .setDelegate(Delegate.GPU)
+            //.setDelegate(Delegate.CPU)
             .build()
 
         val options = FaceLandmarker.FaceLandmarkerOptions.builder()
@@ -36,6 +37,7 @@ class FaceLandmarkerHelper(
             .setMinFacePresenceConfidence(0.5f)
             .setMinTrackingConfidence(0.5f)
             .setOutputFacialTransformationMatrixes(true)
+            .setOutputFaceBlendshapes(true)
             .setResultListener { result, input ->
                 listener(result, input.width, input.height)
             }
