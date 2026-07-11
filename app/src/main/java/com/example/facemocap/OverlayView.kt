@@ -14,6 +14,8 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
     private var imageHeight = 1
     private var mirror = true
 
+    private var rotationDegrees = 0
+
     private val dotPaint = Paint().apply {
         color = Color.GREEN
         style = Paint.Style.FILL
@@ -32,12 +34,14 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         normalizedPoints: List<Pair<Float, Float>>,
         srcImageWidth: Int,
         srcImageHeight: Int,
-        mirrorHorizontally: Boolean
+        mirrorHorizontally: Boolean,
+        rotationDegrees: Int = 0
     ) {
         points = normalizedPoints
         imageWidth = srcImageWidth
         imageHeight = srcImageHeight
         mirror = mirrorHorizontally
+        this.rotationDegrees = rotationDegrees
         postInvalidate()
     }
 
@@ -45,8 +49,9 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         super.onDraw(canvas)
         if (points.isEmpty() || imageWidth <= 0 || imageHeight <= 0) return
 
-        val rotatedImageWidth = imageHeight
-        val rotatedImageHeight = imageWidth
+        val swapDims = rotationDegrees == 90 || rotationDegrees == 270
+        val rotatedImageWidth = if (swapDims) imageHeight else imageWidth
+        val rotatedImageHeight = if (swapDims) imageWidth else imageHeight
 
         val viewAspect = width.toFloat() / height.toFloat()
         val imageAspect = rotatedImageWidth.toFloat() / rotatedImageHeight.toFloat()
@@ -64,8 +69,14 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         }
 
         fun project(nx: Float, ny: Float): Pair<Float, Float> {
-            val rotatedNx = ny
-            val rotatedNy = 1f - nx
+            val rotatedNx: Float
+            val rotatedNy: Float
+            when (rotationDegrees) {
+                90 -> { rotatedNx = 1f - ny; rotatedNy = nx }
+                180 -> { rotatedNx = 1f - nx; rotatedNy = 1f - ny }
+                270 -> { rotatedNx = ny; rotatedNy = 1f - nx }
+                else -> { rotatedNx = nx; rotatedNy = ny }
+            }
             var px = rotatedNx * rotatedImageWidth * scale + dx
             val py = rotatedNy * rotatedImageHeight * scale + dy
             if (mirror) px = width - px

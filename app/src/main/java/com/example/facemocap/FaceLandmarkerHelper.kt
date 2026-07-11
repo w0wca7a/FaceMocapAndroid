@@ -31,6 +31,9 @@ class FaceLandmarkerHelper(
     // bad after the app has been backgrounded and frames piled up.
     private val isProcessing = AtomicBoolean(false)
 
+    var lastRotationDegrees: Int = 0
+        private set
+
     init {
         val baseOptions = BaseOptions.builder()
             .setModelAssetPath("face_landmarker.task")
@@ -68,6 +71,7 @@ class FaceLandmarkerHelper(
         }
 
         try {
+            lastRotationDegrees = imageProxy.imageInfo.rotationDegrees
             // Requires ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888 to be set, see MainActivity.
             val bitmap = imageProxy.toBitmap()
             val mpImage = BitmapImageBuilder(bitmap).build()

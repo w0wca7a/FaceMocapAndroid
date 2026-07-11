@@ -31,6 +31,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var faceLandmarkerHelper: FaceLandmarkerHelper
     private lateinit var tcpStreamer: TcpStreamer
 
+    private var isFrontCamera = true
+
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
     private val requestPermissionLauncher =
@@ -62,11 +64,19 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }
 
+        val switchCameraButton: TextView = findViewById(R.id.switchCameraButton)
+        switchCameraButton.setOnClickListener {
+            isFrontCamera = !isFrontCamera
+            startCamera()
+        }
+
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             statusText.setPadding(statusText.paddingLeft, bars.top, statusText.paddingRight, statusText.paddingBottom)
             (connectionIndicator.layoutParams as android.widget.FrameLayout.LayoutParams).topMargin = bars.top + 12.dpToPx()
             connectionIndicator.requestLayout()
+            (switchCameraButton.layoutParams as android.widget.FrameLayout.LayoutParams).topMargin = bars.top + 4.dpToPx()
+            switchCameraButton.requestLayout()
 
             (versionText.layoutParams as android.widget.FrameLayout.LayoutParams).bottomMargin = bars.bottom + 12.dpToPx()
             versionText.requestLayout()
@@ -131,7 +141,8 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+            val cameraSelector = if (isFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA
+            else CameraSelector.DEFAULT_BACK_CAMERA
 
             try {
                 cameraProvider.unbindAll()
@@ -145,7 +156,7 @@ class MainActivity : AppCompatActivity() {
     private fun onFaceResult(result: FaceLandmarkerResult, imgW: Int, imgH: Int) {
         if (result.faceLandmarks().isEmpty()) {
             runOnUiThread {
-                overlayView.setResults(emptyList(), imgW, imgH, mirrorHorizontally = true)
+                overlayView.setResults(emptyList(), imgW, imgH, mirrorHorizontally = isFrontCamera, rotationDegrees = faceLandmarkerHelper.lastRotationDegrees)
             }
             return
         }
@@ -155,7 +166,7 @@ class MainActivity : AppCompatActivity() {
         // Overlay: MediaPipe's normalized image-space coordinates, used as-is for drawing.
         val normalizedPoints = landmarks.map { it.x() to it.y() }
         runOnUiThread {
-            overlayView.setResults(normalizedPoints, imgW, imgH, mirrorHorizontally = true)
+            overlayView.setResults(normalizedPoints, imgW, imgH, mirrorHorizontally = isFrontCamera, rotationDegrees = faceLandmarkerHelper.lastRotationDegrees)
         }
 
         // Network: real MediaPipe blendshape scores (0..1), no geometric guesswork needed.
