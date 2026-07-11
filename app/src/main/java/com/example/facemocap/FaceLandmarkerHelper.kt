@@ -9,6 +9,7 @@ import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Wraps MediaPipe's FaceLandmarker task (468 face landmarks, same canonical topology
@@ -22,11 +23,18 @@ class FaceLandmarkerHelper(
 ) {
     private var faceLandmarker: FaceLandmarker
 
+    // Guards against calling detectAsync() faster than results come back. Without this,
+    // MediaPipe's internal LIVE_STREAM queue backs up over time (frames keep getting
+    // submitted while previous ones are still processing), causing the overlay to drift
+    // further and further behind actual face movement - worse when something on the
+    // result-listener thread is slower (e.g. a connected TCP client), and especially
+    // bad after the app has been backgrounded and frames piled up.
+    private val isProcessing = AtomicBoolean(false)
+
     init {
         val baseOptions = BaseOptions.builder()
             .setModelAssetPath("face_landmarker.task")
-            .setDelegate(Delegate.GPU)
-            //.setDelegate(Delegate.CPU)
+            .setDelegate(Delegate.CPU)
             .build()
 
         val options = FaceLandmarker.FaceLandmarkerOptions.builder()
@@ -39,9 +47,13 @@ class FaceLandmarkerHelper(
             .setOutputFacialTransformationMatrixes(true)
             .setOutputFaceBlendshapes(true)
             .setResultListener { result, input ->
+                isProcessing.set(false)
                 listener(result, input.width, input.height)
             }
-            .setErrorListener { e -> Log.e("FaceLandmarkerHelper", "MediaPipe error", e) }
+            .setErrorListener { e ->
+                isProcessing.set(false)
+                Log.e("FaceLandmarkerHelper", "MediaPipe error", e)
+            }
             .build()
 
         faceLandmarker = FaceLandmarker.createFromOptions(context, options)
@@ -49,6 +61,12 @@ class FaceLandmarkerHelper(
 
     /** Call from the ImageAnalysis analyzer. Closes imageProxy internally - don't close it yourself. */
     fun detectAsync(imageProxy: ImageProxy) {
+        if (!isProcessing.compareAndSet(false, true)) {
+            // Previous frame still being processed - drop this one instead of queuing it.
+            imageProxy.close()
+            return
+        }
+
         try {
             // Requires ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888 to be set, see MainActivity.
             val bitmap = imageProxy.toBitmap()
@@ -57,6 +75,7 @@ class FaceLandmarkerHelper(
             faceLandmarker.detectAsync(mpImage, timestampMs)
         } catch (e: Exception) {
             Log.e("FaceLandmarkerHelper", "detectAsync failed", e)
+            isProcessing.set(false)
         } finally {
             imageProxy.close()
         }

@@ -1,7 +1,9 @@
 package com.example.facemocap
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.text.format.Formatter
@@ -14,6 +16,8 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
 import java.util.concurrent.Executors
 
@@ -42,6 +46,23 @@ class MainActivity : AppCompatActivity() {
         overlayView = findViewById(R.id.overlayView)
         statusText = findViewById(R.id.statusText)
         connectionIndicator = findViewById(R.id.connectionIndicator)
+
+        val aboutLink: TextView = findViewById(R.id.aboutLink)
+        aboutLink.setOnClickListener {
+            val url = "https://github.com/w0wca7a/FaceMocapAndroid/blob/master/README.md"
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }
+
+        // Push the status bar (top) and navigation bar (bottom) UI below/above the
+        // system bars - fixes the connection indicator overlapping the battery icon
+        // on devices where edge-to-edge is enforced (e.g. Samsung A52 on Android 15+).
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            statusText.setPadding(statusText.paddingLeft, bars.top, statusText.paddingRight, statusText.paddingBottom)
+            (connectionIndicator.layoutParams as android.widget.FrameLayout.LayoutParams).topMargin = bars.top + 12.dpToPx()
+            connectionIndicator.requestLayout()
+            insets
+        }
 
         setConnectionIndicator(connected = false)
 
@@ -141,6 +162,9 @@ class MainActivity : AppCompatActivity() {
         faceLandmarkerHelper.close()
         cameraExecutor.shutdown()
     }
+
+    private fun Int.dpToPx(): Int =
+        (this * resources.displayMetrics.density).toInt()
 
     companion object {
         private const val PORT = 9996

@@ -33,4 +33,24 @@
         android:layout_marginEnd="12dp"
         android:background="@drawable/circle_indicator" />
 
+    <TextView
+        android:id="@+id/versionText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="12dp"
+        android:textColor="#AAFFFFFF"
+        android:textSize="12sp"
+        android:text="v1.2.5" />
+
+    <TextView
+        android:id="@+id/aboutLink"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="12dp"
+        android:textColor="#AAFFFFFF"
+        android:textSize="12sp"
+        android:text="About" />
+
 </FrameLayout>
