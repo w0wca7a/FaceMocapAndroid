@@ -34,7 +34,7 @@ class FaceLandmarkerHelper(
     init {
         val baseOptions = BaseOptions.builder()
             .setModelAssetPath("face_landmarker.task")
-            .setDelegate(Delegate.CPU)
+            .setDelegate(Delegate.GPU)
             .build()
 
         val options = FaceLandmarker.FaceLandmarkerOptions.builder()
