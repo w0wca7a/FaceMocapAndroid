@@ -47,20 +47,32 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         connectionIndicator = findViewById(R.id.connectionIndicator)
 
+        val versionText: TextView = findViewById(R.id.versionText)
+        val versionName = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (e: PackageManager.NameNotFoundException) {
+            null
+        }
+        versionText.text = "v${versionName ?: "?"}"
+
         val aboutLink: TextView = findViewById(R.id.aboutLink)
+        aboutLink.paintFlags = aboutLink.paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
         aboutLink.setOnClickListener {
             val url = "https://github.com/w0wca7a/FaceMocapAndroid/blob/master/README.md"
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }
 
-        // Push the status bar (top) and navigation bar (bottom) UI below/above the
-        // system bars - fixes the connection indicator overlapping the battery icon
-        // on devices where edge-to-edge is enforced (e.g. Samsung A52 on Android 15+).
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             statusText.setPadding(statusText.paddingLeft, bars.top, statusText.paddingRight, statusText.paddingBottom)
             (connectionIndicator.layoutParams as android.widget.FrameLayout.LayoutParams).topMargin = bars.top + 12.dpToPx()
             connectionIndicator.requestLayout()
+
+            (versionText.layoutParams as android.widget.FrameLayout.LayoutParams).bottomMargin = bars.bottom + 12.dpToPx()
+            versionText.requestLayout()
+            (aboutLink.layoutParams as android.widget.FrameLayout.LayoutParams).bottomMargin = bars.bottom + 12.dpToPx()
+            aboutLink.requestLayout()
+
             insets
         }
 
